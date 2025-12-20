@@ -3,6 +3,17 @@ import * as echarts from '../../ec-canvas/echarts';
 const app = getApp();
 
 function initChart(canvas, width, height, dpr) {
+	const mockLength = 10000
+	const mockData = Array.from({length: mockLength}).map(()=>({
+		A: Math.random() * 10 - 5,
+		B: Math.random() * 10 - 5,
+		C: Math.random() * 10 - 5,
+	}))
+	const AData = mockData.map((d)=>d.A)
+	const BData = mockData.map((d)=>d.B)
+	const CData = mockData.map((d)=>d.C)
+	const xData = mockData.map((_,i)=>i)
+
   const chart = echarts.init(canvas, null, {
     width: width,
     height: height,
@@ -12,9 +23,25 @@ function initChart(canvas, width, height, dpr) {
 
   var option = {
     title: {
-      text: '测试下面legend的红色区域不应被裁剪',
+      text: '折线图滚动示例',
       left: 'center'
-    },
+		},
+		dataZoom:[
+			{
+        show: true,
+        type: 'slider',
+        showDetail: false,
+        startValue: 0,
+        endValue: 50,
+        filterMode: 'empty',
+        bottom: 0
+      },
+      {
+				type: 'inside',
+				filterMode: 'filter',
+				animation: false
+      }
+		],
     legend: {
       data: ['A', 'B', 'C'],
       top: 50,
@@ -32,8 +59,7 @@ function initChart(canvas, width, height, dpr) {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-      // show: false
+      data:xData ,
     },
     yAxis: {
       x: 'center',
@@ -43,23 +69,22 @@ function initChart(canvas, width, height, dpr) {
           type: 'dashed'
         }
       }
-      // show: false
     },
     series: [{
       name: 'A',
       type: 'line',
-      smooth: true,
-      data: [18, 36, 65, 30, 78, 40, 33]
+			smooth: true,
+			data: AData
     }, {
       name: 'B',
       type: 'line',
-      smooth: true,
-      data: [12, 50, 51, 35, 70, 30, 20]
+			smooth: true,
+			data: BData
     }, {
       name: 'C',
       type: 'line',
-      smooth: true,
-      data: [10, 30, 31, 50, 40, 20, 10]
+			smooth: true,
+			data: CData
     }]
   };
 
