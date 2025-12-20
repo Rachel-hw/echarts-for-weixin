@@ -28,6 +28,23 @@ function compareVersion(v1, v2) {
   return 0
 }
 
+/** 获取两点间距离 */
+function getDistance(t0, t1) { 
+  return Math.hypot(t0.x-t1.x, t0.y-t1.y);
+}
+
+// 优化的节流函数 - 避免闭包内存泄漏
+function throttle(func, limit = 50) {
+  let lastCall = 0;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastCall >= limit) {
+      lastCall = now;
+      func.apply(this, args);
+    }
+  };
+}
+
 Component({
   properties: {
     canvasId: {
@@ -213,62 +230,175 @@ Component({
       }
     },
 
+    /**
+     * 双指缩放处理函数
+     * 基于 touchStart 时的初始状态进行计算，避免高频调用 getOption()
+     */
+    zoomHandler: throttle(function(e) {
+      if (!this.chart || !this.zoomContext) {
+        return;
+      }
+
+      const [t0, t1] = e.touches;
+      const curDis = getDistance(t0, t1);
+      
+      // 基于初始距离计算总缩放比
+      const totalScale = curDis / this.zoomContext.initialDis;
+
+      // 判断缩放方向（手指距离增大 = 放大图表 = 窗口变小）
+      const isZoomingIn = totalScale > 1;
+      
+      // 智能灵敏度计算（基于初始窗口大小）
+      const initialWindow = this.zoomContext.initialWindow;
+      const sensitivity = isZoomingIn 
+        ? Math.max(0.1, Math.pow(initialWindow / 100, 0.5) * 3)
+        : Math.max(0.15, Math.pow(initialWindow / 100, 0.5) * 3);
+
+      let scale = 1 + (totalScale - 1) * sensitivity;
+
+      // 基于初始窗口计算新窗口（避免累积误差）
+      let newWindow = this.zoomContext.initialWindow / scale;
+      
+      // 窗口大小限制（基于点数）
+      const MIN_WINDOW = this.zoomContext.minWindowPercent || 1; // 最小10个点（或数据总长度）
+      const MAX_WINDOW = this.zoomContext.maxWindowPercent || 100; // 最大300个点
+      
+      newWindow = Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, newWindow));
+      
+      const windowCenter = this.zoomContext.initialWindowCenter;
+      let newStart = windowCenter - newWindow / 2;
+      let newEnd = windowCenter + newWindow / 2;
+
+      // 边界处理：确保不超出 0-100 范围
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = newWindow;
+      }
+      if (newEnd > 100) {
+        newEnd = 100;
+        newStart = 100 - newWindow;
+      }
+
+      this.chart.dispatchAction({
+        type: 'dataZoom',
+        dataZoomIndex: 0,
+        start: newStart,
+        end: newEnd
+      });
+    }, 100),
+
     touchStart(e) {
-      if (this.chart && e.touches.length > 0) {
-        var touch = e.touches[0];
+      if (this.chart) {
         var handler = this.chart.getZr().handler;
-        handler.dispatch('mousedown', {
-          zrX: touch.x,
-          zrY: touch.y,
-          preventDefault: () => {},
-          stopImmediatePropagation: () => {},
-          stopPropagation: () => {}
-        });
-        handler.dispatch('mousemove', {
-          zrX: touch.x,
-          zrY: touch.y,
-          preventDefault: () => {},
-          stopImmediatePropagation: () => {},
-          stopPropagation: () => {}
-        });
-        handler.processGesture(wrapTouch(e), 'start');
+        if (e.touches.length === 1) {
+          var touch = e.touches[0];
+          handler.dispatch('mousedown', {
+            zrX: touch.x,
+            zrY: touch.y,
+            preventDefault: () => {},
+            stopImmediatePropagation: () => {},
+            stopPropagation: () => {}
+          });
+          handler.dispatch('mousemove', {
+            zrX: touch.x,
+            zrY: touch.y,
+            preventDefault: () => {},
+            stopImmediatePropagation: () => {},
+            stopPropagation: () => {}
+          });
+        } else if (e.touches.length === 2) {
+          // 缓存初始缩放状态
+          const option = this.chart.getOption();
+          if (option.dataZoom && option.dataZoom.length > 0) {
+            const dz = option.dataZoom[0];
+            const initialWindow = dz.end - dz.start;
+            
+            // 获取数据总点数
+            let totalPoints = 0;
+            if (option.series && option.series.length > 0) {
+              const seriesData = option.series[0].data;
+              if (seriesData && seriesData.length > 0) {
+                totalPoints = seriesData.length;
+              }
+            }
+            
+            // 数据少于10个点，禁用缩放
+            if (totalPoints < 10) {
+              return;
+            }
+            
+            // 计算最小/最大显示点数
+            const minPoints = 10; // 最小显示10个点
+            const maxPoints = Math.min(300, totalPoints); // 最大显示300个点（不超过总数据）
+            
+            // 转换为百分比（用于 dataZoom）
+            const minWindowPercent = (minPoints / totalPoints) * 100;
+            const maxWindowPercent = (maxPoints / totalPoints) * 100;
+            
+            this.zoomContext = {
+              initialDis: getDistance(e.touches[0], e.touches[1]),
+              initialStart: dz.start,
+              initialEnd: dz.end,
+              initialWindow: initialWindow,
+              initialWindowCenter: dz.start + initialWindow / 2,
+              minWindowPercent: minWindowPercent,
+              maxWindowPercent: maxWindowPercent,
+              totalPoints: totalPoints,
+              minPoints: minPoints,
+              maxPoints: maxPoints
+            };
+          }
+        }
       }
     },
 
     touchMove(e) {
-      if (this.chart && e.touches.length > 0) {
-        var touch = e.touches[0];
+      if (this.chart) {
         var handler = this.chart.getZr().handler;
-        handler.dispatch('mousemove', {
-          zrX: touch.x,
-          zrY: touch.y,
-          preventDefault: () => {},
-          stopImmediatePropagation: () => {},
-          stopPropagation: () => {}
-        });
-        handler.processGesture(wrapTouch(e), 'change');
+        if (e.touches.length > 0) {
+          if (e.touches.length === 1) {
+            var touch = e.touches[0];
+            handler.dispatch('mousemove', {
+              zrX: touch.x,
+              zrY: touch.y,
+              preventDefault: () => { },
+              stopImmediatePropagation: () => { },
+              stopPropagation: () => { }
+            });
+          }
+        }
+        if (e.touches.length === 2) {
+          this.zoomHandler(e)
+        }
       }
     },
 
     touchEnd(e) {
       if (this.chart) {
-        const touch = e.changedTouches ? e.changedTouches[0] : {};
         var handler = this.chart.getZr().handler;
-        handler.dispatch('mouseup', {
-          zrX: touch.x,
-          zrY: touch.y,
-          preventDefault: () => {},
-          stopImmediatePropagation: () => {},
-          stopPropagation: () => {}
-        });
-        handler.dispatch('click', {
-          zrX: touch.x,
-          zrY: touch.y,
-          preventDefault: () => {},
-          stopImmediatePropagation: () => {},
-          stopPropagation: () => {}
-        });
-        handler.processGesture(wrapTouch(e), 'end');
+        if (e.changedTouches && e.changedTouches.length === 1 && (!e.touches || e.touches.length <= 1)) {
+          // 只在最后一根手指离开时分发 mouseup/click
+          const touch = e.changedTouches[0];
+          handler.dispatch('mouseup', {
+            zrX: touch.x,
+            zrY: touch.y,
+            preventDefault: () => {},
+            stopImmediatePropagation: () => {},
+            stopPropagation: () => {}
+          });
+          handler.dispatch('click', {
+            zrX: touch.x,
+            zrY: touch.y,
+            preventDefault: () => {},
+            stopImmediatePropagation: () => {},
+            stopPropagation: () => {}
+          });
+        }
+        
+        // 清理缩放上下文（释放内存）
+        if (!e.touches || e.touches.length < 2) {
+          this.zoomContext = null;
+        }
       }
     }
   }
