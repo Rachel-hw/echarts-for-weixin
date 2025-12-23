@@ -255,6 +255,9 @@ Component({
         : Math.max(0.15, Math.pow(initialWindow / 100, 0.5) * 3);
 
       let scale = 1 + (totalScale - 1) * sensitivity;
+      
+      // 防止 scale 过小导致除法溢出（最小值设为 0.1）
+      scale = Math.max(0.1, scale);
 
       // 基于初始窗口计算新窗口（避免累积误差）
       let newWindow = this.zoomContext.initialWindow / scale;

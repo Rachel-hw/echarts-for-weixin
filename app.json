@@ -4,6 +4,7 @@
     "pages/bar/index",
     "pages/measureText/index",
     "pages/line/index",
+    "pages/lineScroll/index",
     "pages/scatter/index",
     "pages/sunburst/index",
     "pages/funnel/index",
